@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"log"
 	"log/slog"
 	"net"
@@ -10,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/caarlos0/env/v11"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rodneyosodo/gophercon/calculator"
@@ -25,21 +25,26 @@ import (
 
 const defHTTPTimeout = 10 * time.Second
 
+type config struct {
+	LogLevel           string        `env:"GOPHERCON_LOG_LEVEL"           envDefault:"info"`
+	Addr               string        `env:"GOPHERCON_ADDR"                envDefault:":11211"`
+	PrometheusEndpoint string        `env:"GOPHERCON_PROMETHEUS_ENDPOINT" envDefault:":9464"`
+	ReadTimeout        time.Duration `env:"GOPHERCON_READ_TIMEOUT"        envDefault:"10s"`
+	WriteTimeout       time.Duration `env:"GOPHERCON_WRITE_TIMEOUT"       envDefault:"10s"`
+}
+
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	var g *errgroup.Group
 	g, _ = errgroup.WithContext(ctx)
 
-	logLevel := flag.String("log_level", "info", "log level")
-	addr := flag.String("addr", ":11211", "gophercon calculator server address")
-	prometheusEndpoint := flag.String("prometheus_endpoint", ":9464", "the Prometheus exporter endpoint")
-	readTimeout := flag.Duration("read_timeout", defHTTPTimeout, "the read timeout for the server")
-	writeTimeout := flag.Duration("write_timeout", defHTTPTimeout, "the write timeout for the server")
-
-	flag.Parse()
+	cfg := config{}
+	if err := env.Parse(&cfg); err != nil {
+		log.Fatalf("failed to load configuration : %s", err.Error())
+	}
 
 	var level slog.Level
-	if err := level.UnmarshalText([]byte(*logLevel)); err != nil {
+	if err := level.UnmarshalText([]byte(cfg.LogLevel)); err != nil {
 		log.Fatalf("failed to parse log level: %s", err.Error())
 	}
 	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -58,21 +63,21 @@ func main() {
 
 	g.Go(func() error {
 		server := &http.Server{
-			Addr:         *prometheusEndpoint,
+			Addr:         cfg.PrometheusEndpoint,
 			Handler:      promhttp.Handler(),
-			ReadTimeout:  *readTimeout,
-			WriteTimeout: *writeTimeout,
+			ReadTimeout:  cfg.ReadTimeout,
+			WriteTimeout: cfg.WriteTimeout,
 		}
 
 		return server.ListenAndServe()
 	})
-	logger.Info("Prometheus exporter started", slog.String("endpoint", *prometheusEndpoint))
+	logger.Info("Prometheus exporter started", slog.String("endpoint", cfg.PrometheusEndpoint))
 
 	so := opentelemetry.ServerOption(
 		opentelemetry.Options{MetricsOptions: opentelemetry.MetricsOptions{MeterProvider: provider}},
 	)
 
-	listener, err := net.Listen("tcp", *addr)
+	listener, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
 		logger.Error("Failed to listen", slog.String("error", err.Error()))
 		cancel()
@@ -95,7 +100,7 @@ func main() {
 		return server.Serve(listener)
 	})
 
-	logger.Info("Calculator server started", slog.String("address", *addr))
+	logger.Info("Calculator server started", slog.String("address", cfg.Addr))
 
 	if err := g.Wait(); err != nil {
 		logger.Error("Failed to serve", slog.String("error", err.Error()))

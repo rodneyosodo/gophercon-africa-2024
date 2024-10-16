@@ -3,6 +3,7 @@ module github.com/rodneyosodo/gophercon
 go 1.23.2
 
 require (
+	github.com/caarlos0/env/v11 v11.2.2
 	github.com/hashicorp/go-retryablehttp v0.7.7
 	github.com/prometheus/client_golang v1.20.5
 	go.opentelemetry.io/otel v1.31.0
