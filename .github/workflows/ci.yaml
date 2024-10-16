@@ -1,0 +1,43 @@
+name: Continuous Integration
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/ci.yaml"
+      - "**.go"
+
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/ci.yaml"
+      - "**.go"
+
+  workflow_dispatch:
+
+jobs:
+  lint-and-build:
+    name: Lint and Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.23.x
+          cache-dependency-path: "go.sum"
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.61.0
+          args: --config ./.golangci.yaml
+
+      - name: Build
+        run: |
+          make all

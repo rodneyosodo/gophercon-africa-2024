@@ -1,0 +1,32 @@
+run:
+  timeout: 3m
+
+issues:
+  max-issues-per-linter: 100
+  max-same-issues: 100
+
+linters-settings:
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+      - experimental
+      - opinionated
+
+linters:
+  enable-all: true
+  disable:
+    - execinquery # deprecated
+    - gomnd # deprecated
+    - exportloopref # deprecated
+    - depguard
+    - exhaustruct
+    - ireturn
+    - funlen
+    - varnamelen
+    - wrapcheck
+    - wsl
+    - nonamedreturns
+    - cyclop
+    - errorlint
