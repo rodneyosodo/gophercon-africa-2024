@@ -30,3 +30,4 @@ linters:
     - nonamedreturns
     - cyclop
     - errorlint
+    - err113

@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package calculator;
+
+option go_package = "./calculator";
+
+// Calculator is the service that performs arithmetic operations.
+service Calculator {
+    rpc Add(Request) returns (Response);
+    rpc Subtract(Request) returns (Response);
+    rpc Multiply(Request) returns (Response);
+    rpc Divide(Request) returns (Response);
+}
+
+message Request {
+  int64 a = 1;
+  int64 b = 2;
+}
+
+message Response { int64 result = 1; }
