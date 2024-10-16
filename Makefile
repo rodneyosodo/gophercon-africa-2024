@@ -19,7 +19,7 @@ define make_docker
 		--no-cache \
 		--tag=$(DOCKER_IMAGE_NAME):$(VERSION) \
 		--tag=$(DOCKER_IMAGE_NAME):latest \
-		-f docker/Dockerfile .
+		-f Dockerfile .
 endef
 
 define docker_push
@@ -48,6 +48,10 @@ docker-push: docker
 run-binary:
 	@go run cmd/main.go
 
+.PHONY: run-docker
+run-docker:
+	docker compose --env-file .env up
+
 .PHONY: proto
 proto:
 	@protoc -I. --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative calculator/calculator.proto
@@ -67,6 +71,7 @@ help:
 	@echo "  make docker - Build the docker image"
 	@echo "  make docker-push - Push the docker image"
 	@echo "  make run-binary - Run the binary"
+	@echo "  make run-docker - Run the docker image"
 	@echo "  make proto - Generate protobuf files"
 	@echo "  make lint - Lint the code"
 	@echo "  make all - Build the binary and docker image"

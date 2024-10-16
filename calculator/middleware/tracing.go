@@ -15,7 +15,7 @@ type tracing struct {
 	svc    calculator.Service
 }
 
-func Tracing(svc calculator.Service, tracer trace.Tracer) calculator.Service {
+func Tracing(tracer trace.Tracer, svc calculator.Service) calculator.Service {
 	return &tracing{tracer, svc}
 }
 
@@ -44,12 +44,15 @@ func (t *tracing) Divide(ctx context.Context, a, b int64) (result int64, err err
 }
 
 func (t *tracing) trace(ctx context.Context, name string, a, b, result int64, err error) {
-	_, span := t.tracer.Start(ctx, name, trace.WithAttributes(
+	attributes := []attribute.KeyValue{
 		attribute.Int64("a", a),
 		attribute.Int64("b", b),
 		attribute.Int64("result", result),
-		attribute.String("error", err.Error()),
-	))
+	}
+	if err != nil {
+		attributes = append(attributes, attribute.String("error", err.Error()))
+	}
+	_, span := t.tracer.Start(ctx, name, trace.WithAttributes(attributes...))
 
 	span.End()
 }

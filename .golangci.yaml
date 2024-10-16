@@ -13,6 +13,9 @@ linters-settings:
       - style
       - experimental
       - opinionated
+    disabled-checks:
+      - hugeParam
+      - exitAfterDefer
 
 linters:
   enable-all: true

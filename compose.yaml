@@ -1,0 +1,135 @@
+name: gophercon
+
+networks:
+  gophercon-net:
+    driver: bridge
+
+volumes:
+  prometheus-volume:
+
+services:
+  gophercon:
+    image: ghcr.io/rodneyosodo/gophercon:latest
+    container_name: gophercon
+    restart: unless-stopped
+    ports:
+      - ${GOPHERCON_PORT}:${GOPHERCON_PORT}
+      - ${GOPHERCON_PROMETHEUS_PORT}:${GOPHERCON_PROMETHEUS_PORT}
+    expose:
+      - ${GOPHERCON_PORT}
+      - ${GOPHERCON_PROMETHEUS_PORT}
+    networks:
+      - gophercon-net
+    environment:
+      GOPHERCON_LOG_LEVEL: ${GOPHERCON_LOG_LEVEL}
+      GOPHERCON_ADDR: ${GOPHERCON_ADDR}
+      GOPHERCON_PROMETHEUS_ENDPOINT: ${GOPHERCON_PROMETHEUS_ENDPOINT}
+      GOPHERCON_READ_TIMEOUT: ${GOPHERCON_READ_TIMEOUT}
+      GOPHERCON_WRITE_TIMEOUT: ${GOPHERCON_WRITE_TIMEOUT}
+      GOPHERCON_OTEL_URL: ${GOPHERCON_OTEL_URL}
+      GOPHERCON_TRACE_RATIO: ${GOPHERCON_TRACE_RATIO}
+      GOPHERCON_LOKI_URL: ${GOPHERCON_LOKI_URL}
+      GOPHERCON_PYROSCOPE_URL: ${GOPHERCON_PYROSCOPE_URL}
+
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: loki
+    restart: on-failure
+    ports:
+      - ${LOKI_PORT}:${LOKI_PORT}
+    command: "-config.file=/etc/loki/config.yaml -target=all"
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/config.yaml
+    networks:
+      - gophercon-net
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    restart: on-failure
+    command:
+      - --web.enable-remote-write-receiver
+      - --enable-feature=native-histograms
+      - --config.file=/etc/prometheus/prometheus.yml
+    ports:
+      - ${PROMETHEUS_PORT}:${PROMETHEUS_PORT}
+    networks:
+      - gophercon-net
+    volumes:
+      - type: bind
+        source: ./prometheus/prometheus.yaml
+        target: /etc/prometheus/prometheus.yml
+      - prometheus-volume:/prometheus
+
+  tempo:
+    image: grafana/tempo:2.6.0
+    container_name: tempo
+    restart: on-failure
+    command:
+      - "-storage.trace.backend=local"
+      - "-storage.trace.local.path=/tmp/tempo/traces"
+      - "-storage.trace.wal.path=/tmp/tempo/wal"
+      - "-auth.enabled=false"
+      - "-server.http-listen-port=3200"
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+    networks:
+      - gophercon-net
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    restart: on-failure
+    depends_on:
+      - prometheus
+    ports:
+      - ${GRAFANA_PORT}:${GRAFANA_PORT}
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+    volumes:
+      - ./grafana:/etc/grafana/provisioning/
+    networks:
+      - gophercon-net
+
+  agent:
+    image: grafana/agent:latest
+    container_name: agent
+    restart: on-failure
+    volumes:
+      - "./contrib/agent-local.river:/grafana-agent.river:Z"
+      - "${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock"
+    command:
+      ["run", "/grafana-agent.river", "--server.http.listen-addr=0.0.0.0:12345"]
+    ports:
+      - "12345:12345"
+    environment:
+      AGENT_MODE: flow
+      QUICKPIZZA_HOST: quickpizza:3333
+      METRICS_ENDPOINT: http://prometheus:9090/api/v1/write
+      TRACES_ENDPOINT: http://tempo:4317
+      LOGS_ENDPOINT: http://loki:3100/loki/api/v1/push
+    depends_on:
+      - prometheus
+      - gophercon
+      - tempo
+    networks:
+      - gophercon-net
+
+  pyroscope:
+    image: grafana/pyroscope:latest
+    container_name: pyroscope
+    restart: on-failure
+    environment:
+      JAEGER_AGENT_HOST: tempo
+      JAEGER_SAMPLER_TYPE: const
+      JAEGER_SAMPLER_PARAM: 1
+    command: ["-config.file=/etc/pyroscope.yml"]
+    ports:
+      - "4040:4040"
+    volumes:
+      - ./pyroscope/pyroscope.yml:/etc/pyroscope.yml
+    networks:
+      - gophercon-net
