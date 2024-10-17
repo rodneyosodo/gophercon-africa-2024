@@ -11,13 +11,14 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v11"
+	"github.com/grafana/loki-client-go/loki"
 	"github.com/grafana/pyroscope-go"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rodneyosodo/gophercon/calculator"
 	"github.com/rodneyosodo/gophercon/calculator/api"
 	"github.com/rodneyosodo/gophercon/calculator/middleware"
-	slogloki "github.com/samber/slog-loki"
+	slogloki "github.com/samber/slog-loki/v3"
 	slogmulti "github.com/samber/slog-multi"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -40,8 +41,8 @@ import (
 
 type config struct {
 	LogLevel           string        `env:"GOPHERCON_LOG_LEVEL"           envDefault:"info"`
-	Addr               string        `env:"GOPHERCON_ADDR"                envDefault:":11211"`
-	PrometheusEndpoint string        `env:"GOPHERCON_PROMETHEUS_ENDPOINT" envDefault:":11212"`
+	Addr               string        `env:"GOPHERCON_ADDR"                envDefault:":6000"`
+	PrometheusEndpoint string        `env:"GOPHERCON_PROMETHEUS_ENDPOINT" envDefault:":6001"`
 	ReadTimeout        time.Duration `env:"GOPHERCON_READ_TIMEOUT"        envDefault:"10s"`
 	WriteTimeout       time.Duration `env:"GOPHERCON_WRITE_TIMEOUT"       envDefault:"10s"`
 	OTELURL            url.URL       `env:"GOPHERCON_OTEL_URL"            envDefault:""`
@@ -52,6 +53,7 @@ type config struct {
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	g, ctx := errgroup.WithContext(ctx)
 
 	cfg := config{}
@@ -69,7 +71,17 @@ func main() {
 		}),
 	)
 	if cfg.LokiURL != "" {
-		hander := slogloki.Option{Level: level, Endpoint: cfg.LokiURL}.NewLokiHandler()
+		config, err := loki.NewDefaultConfig(cfg.LokiURL)
+		if err != nil {
+			log.Fatalf("failed to create loki config: %s", err.Error())
+		}
+		config.TenantID = "gophercon"
+		client, err := loki.New(config)
+		if err != nil {
+			log.Fatalf("failed to create loki client: %s", err.Error())
+		}
+
+		hander := slogloki.Option{Level: level, Client: client}.NewLokiHandler()
 		fanout = slogmulti.Fanout(
 			slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 				Level: level,
@@ -78,7 +90,7 @@ func main() {
 		)
 	}
 
-	logger := slog.New(fanout)
+	logger := slog.New(fanout).With("service", "gophercon")
 	slog.SetDefault(logger)
 
 	if cfg.PyroScopeURL != "" {
@@ -96,8 +108,7 @@ func main() {
 				pyroscope.ProfileMutexCount,
 			},
 		}); err != nil {
-			logger.Error("failed to start pyroscope", slog.Any("error", err))
-			os.Exit(1)
+			log.Fatalf("failed to start pyroscope: %s", err.Error())
 		}
 	}
 
@@ -108,14 +119,11 @@ func main() {
 	default:
 		sdktp, err := initTracer(ctx, cfg.OTELURL, cfg.TraceRatio)
 		if err != nil {
-			logger.Error("failed to initialize opentelemetry", slog.Any("error", err))
-			os.Exit(1)
-
-			return
+			log.Fatalf("failed to initialize opentelemetry: %s", err.Error())
 		}
 		defer func() {
 			if err := sdktp.Shutdown(ctx); err != nil {
-				logger.Error("error shutting down tracer provider", slog.Any("error", err))
+				log.Fatalf("error shutting down tracer provider: %s", err.Error())
 			}
 		}()
 		tp = sdktp
@@ -124,9 +132,7 @@ func main() {
 
 	exporter, err := prometheus.New()
 	if err != nil {
-		logger.Error("Failed to start prometheus exporter", slog.String("error", err.Error()))
-		cancel()
-		os.Exit(1)
+		log.Fatalf("Failed to start prometheus exporter: %s", err.Error())
 	}
 	provider := metric.NewMeterProvider(metric.WithReader(exporter))
 
@@ -148,9 +154,7 @@ func main() {
 
 	listener, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
-		logger.Error("Failed to listen", slog.String("error", err.Error()))
-		cancel()
-		os.Exit(1)
+		log.Fatalf("Failed to listen: %s", err.Error())
 	}
 
 	server := grpc.NewServer(so, grpc.StatsHandler(otelgrpc.NewServerHandler()))
@@ -173,9 +177,7 @@ func main() {
 	logger.Info("Calculator server started", slog.String("address", cfg.Addr))
 
 	if err := g.Wait(); err != nil {
-		logger.Error("Failed to serve", slog.String("error", err.Error()))
-		cancel()
-		os.Exit(1)
+		log.Fatalf("Failed to serve: %s", err.Error())
 	}
 }
 
