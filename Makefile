@@ -5,7 +5,7 @@ GOARM ?= $(shell go env GOARM)
 
 BUILD_DIR ?= ./build
 SVC = gophercon
-DOCKER_IMAGE_NAME ?= ghcr.io/rodneyosodo/gophercon
+DOCKER_IMAGE_NAME ?= ghcr.io/rodneyosodo/gophercon-africa-2024
 VERSION ?= $(shell git describe --abbrev=0 --tags 2>/dev/null || echo 'v0.0.0')
 
 define compile_service

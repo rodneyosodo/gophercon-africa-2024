@@ -9,7 +9,7 @@ volumes:
 
 services:
   gophercon:
-    image: ghcr.io/rodneyosodo/gophercon:latest
+    image: ghcr.io/rodneyosodo/gophercon-africa-2024:latest
     container_name: gophercon
     restart: unless-stopped
     ports:
